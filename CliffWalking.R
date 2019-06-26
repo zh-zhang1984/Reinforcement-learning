@@ -1,3 +1,7 @@
+# Copyright (C)                                                       #
+# 2016-2018 Shangtong Zhang(zhangshangtong.cpp@gmail.com)             #
+# 2016 Kenta Shimada(hyperkentakun@gmail.com)                         #
+# The follow R code were modified from the above mentioned python code. 
 #cliff walking example for both Qlearning and SASAR
 # world height
 WORLD_HEIGHT = 4
