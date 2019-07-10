@@ -1,0 +1,101 @@
+---
+title: "MonteCarloMed"
+author: "zzh"
+date: "7/9/2019"
+output: 
+    prettydoc::html_pretty:
+      highlight: github
+      theme: architect
+      toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+This is my first try to apply Monte Carlo method to clinical medicine to choose an treatment strategy that is best suitable for a condition. Monte Carlo method is thought to be the best suitable model for solving clinical problems becase the sequence is a patient's trajectory and is avaiable during data collection. The full sequence is also avaiable at the end of a study, which is unlike some other situations such as blackjack and cliff walking games, in which the generation of sequence is cheap and can be on-line.  
+
+# DataSimulation
+```{r DataGeneration}
+N=3000
+set.seed(123)
+id <- sample(x=1:500,size = N,replace = T)
+map <- rnorm(N,mean = 60,sd=10)
+lac <- abs(rnorm(N,mean = 3,sd = 1))
+hct <- rnorm(N,mean = 30,sd=10)
+actions <- 1:10
+dt <- data.frame(id=id,map=map,lac=lac,hct=hct,actions=actions)
+dt <- dt[order(dt$id),]
+head(dt)
+library(plyr)
+dt <- ddply(dt,.(id),function(dd){
+  dd$mort <- ifelse(1:nrow(dd)==nrow(dd),rbinom(1,1,0.4),0)
+  return(dd)
+})
+```
+
+#Use linear approximation; may explode
+```{r LinearApproximation}
+Weight<-matrix(rep(0,5),ncol = 1)
+alpha = 0.0005
+for (episode in 1:10) {
+  dtsample <- dt[dt$id==episode,]
+  Nsteps <- nrow(dtsample)
+  G <- -sum(dtsample[,"mort"])
+  V <- dtsample[,c("map","lac","hct","actions")]
+  V$intercept <- 1
+  for (step in 1:Nsteps) {
+    Weight <- Weight + as.vector(alpha*(G - as.numeric(V[step,]) %*% Weight))*t(V[step,])
+    
+  }
+  if(sum(is.na(Weight))>0){
+      break;
+    }
+}
+Weight
+#the result cannot converge due to randomly generated samples
+```
+
+#Using caret package to train the model
+```{r CaretPackage}
+#return for each episode is the same -1 for mort=1; 1 for mort = 0 (Not an idea choice)
+dt <- ddply(dt,.(id),function(dd){
+  dd$G <- ifelse(sum(dd$mort)==0,1,-1)
+  return(dd)
+})
+#discounted return gamma=0.95
+Gamma <- 0.95
+dt <- ddply(dt,.(id),function(dd){
+  steps <- nrow(dd)
+  for (i in 1:steps) {
+    if(sum(dd$mort)==0){
+      dd$G[i] <- Gamma^(steps-i)
+    }else{
+      dd$G[i] <- -Gamma^(steps-i)
+    }
+  }
+  return(dd)
+})
+```
+
+#Model taining 
+```{r ModelTraining, results="hide"}
+library(caret)
+#model training
+NNGrid <-  expand.grid(size = 3:10, 
+                        decay = seq(0,0.1,by=0.02))
+mod <- train(G~map+lac+hct+actions,data = dt,
+             method="nnet",
+             tuneGrid = NNGrid,
+             verbose = FALSE)
+```
+
+#Visulization
+```{r Visulization}
+plot(mod)
+#to plot how to choose action based on the model
+index = 20 # a stuation like patient 20; 
+dtPred <- dt[rep(index,10),]
+dtPred$actions <- 1:10 # vary the actions to see which can achieve the largest action value
+action_V <- predict.train(mod,newdata = dtPred)
+plot(dtPred$actions,action_V)
+```
